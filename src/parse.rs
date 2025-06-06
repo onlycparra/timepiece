@@ -1,36 +1,33 @@
-use chrono::{DateTime, Datelike, Duration, Local, TimeZone};
+use chrono::{DateTime, Duration, Local, NaiveDateTime, NaiveTime, TimeZone};
 
-pub fn time(t: &str) -> Option<DateTime<Local>> {
-    let (hours, t) = t.split_once(':')?;
-    let (minutes, t) = t.split_once(':')?;
-    let (seconds, pm) = t.split_once(' ')?;
+pub fn time(given_str: &str) -> Option<DateTime<Local>> {
+    let now = Local::now().naive_local();
+    let now_time = now.time();
+    let now_day = now.date();
 
-    let mut pm: u32 = match pm.to_lowercase().as_str() {
-        "am" | "a" => 0,
-        "pm" | "p" => 12,
+    // if the string has only two elements, assume it is hours and minutes
+    let time_elems: Vec<&str> = given_str.split(':').collect();
 
+    let std_given_str = match time_elems.len() {
+        2 => format!("{}:{}:00", time_elems[0], time_elems[1]),
+        3 => format!("{}:{}:{}", time_elems[0], time_elems[1], time_elems[2]),
         _ => return None,
     };
 
-    let hours: u32 = hours.parse().ok()?;
-    let minutes: u32 = minutes.parse().ok()?;
-    let seconds: u32 = seconds.parse().ok()?;
+    // parse time
+    let target_time = NaiveTime::parse_from_str(&std_given_str, "%H:%M:%S").expect(&format!(
+        "Error: \"{given_str}\" does not look like a timestamp."
+    ));
 
-    if hours == 12 && pm == 12 {
-        pm = 0;
-    }
+    // determine whether it is today or tomorrow
+    let target_date = if target_time < now_time {
+        now_day + Duration::days(1)
+    } else {
+        now_day
+    };
 
-    let now = Local::now();
-    Local
-        .with_ymd_and_hms(
-            now.year(),
-            now.month(),
-            now.day(),
-            hours + pm,
-            minutes,
-            seconds,
-        )
-        .earliest()
+    let target_datetime = NaiveDateTime::new(target_date, target_time);
+    Local.from_local_datetime(&target_datetime).single()
 }
 
 pub fn dur(t: &str) -> Option<Duration> {

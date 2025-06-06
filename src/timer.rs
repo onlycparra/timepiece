@@ -14,10 +14,8 @@ struct TimerState {
     time: Duration,
     duration: Duration,
     increment: Duration,
-
     cancel: bool,
     paused: bool,
-
     printer: Printer,
 }
 
@@ -41,7 +39,7 @@ fn read_keys(state: Arc<Mutex<TimerState>>) {
             }) => {
                 if !state.paused {
                     let left = &(state.time - state.duration);
-                    state.printer.erase(format!(" {} PAUSED", dur::time(left)));
+                    state.printer.erase(format!("{} PAUSED", dur::time(left)));
                 }
 
                 state.paused = !state.paused;
@@ -52,20 +50,16 @@ fn read_keys(state: Arc<Mutex<TimerState>>) {
                 ..
             }) => {
                 let left = &(state.time - state.duration);
-                let dur = dur::time(&state.duration);
+                let now_time = time::time(&Local::now());
                 state.printer.print(format!(
-                    "\x07Timer for {dur} cancelled (time left: {})",
-                    dur::time(left),
+                    "\x07{now_time}: Timer cancelled (time left: {left})"
                 ));
 
                 #[cfg(feature = "notify")]
                 {
                     if let Err(e) = Notification::new()
                         .summary("Timer cancelled")
-                        .body(&format!(
-                            "Timer for {dur} cancelled\nTime left: {}",
-                            dur::time(left)
-                        ))
+                        .body(&format!("Timer for {dur} cancelled\n (time left: {left})"))
                         .show()
                     {
                         eprintln!("Failed to send notification: {e}");
@@ -84,9 +78,9 @@ fn read_keys(state: Arc<Mutex<TimerState>>) {
                 let paused = state.paused;
                 let left = &(state.time - state.duration);
                 state.printer.erase(format!(
-                    " {}{}",
+                    "{} {}",
                     dur::time(left),
-                    if paused { " PAUSED" } else { "" }
+                    if paused { "PAUSED" } else { "" }
                 ));
             }
             Event::Key(KeyEvent {
@@ -98,9 +92,9 @@ fn read_keys(state: Arc<Mutex<TimerState>>) {
                 let paused = state.paused;
                 let left = &(state.time - state.duration);
                 state.printer.erase(format!(
-                    " {}{}",
+                    "{} {}",
                     dur::time(left),
-                    if paused { " PAUSED" } else { "" }
+                    if paused { "PAUSED" } else { "" }
                 ));
             }
             _ => (),
@@ -109,17 +103,16 @@ fn read_keys(state: Arc<Mutex<TimerState>>) {
 }
 
 pub fn timer(duration: Duration) {
-    print!("Timer started at ");
-    crate::clock::time();
+    let now_time = time::time(&Local::now());
+    let dur = dur::time(&duration);
+    println!("{now_time}: Started timer for {dur}");
 
     let state = Arc::new(Mutex::new(TimerState {
         time: Duration::zero(),
         duration,
         increment: Duration::seconds(1),
-
         paused: false,
         cancel: false,
-
         printer: Printer::new(),
     }));
 
@@ -137,20 +130,20 @@ pub fn timer(duration: Duration) {
         if !state.paused {
             state.time = state.time + state.increment;
             let left = &(state.time - state.duration);
-            state.printer.erase(format!(" {}", dur::time(left)));
+            state.printer.erase(format!("{}", dur::time(left)));
 
             if state.time >= state.duration {
-                let dur = dur::time(&state.duration);
+                let now_time = time::time(&Local::now());
                 state
                     .printer
-                    .print(format!("\x07Timer for {} complete", dur));
+                    .print(format!("\x07{now_time}: Completed timer for {dur}"));
 
                 #[cfg(feature = "notify")]
                 {
                     if let Err(e) = Notification::new()
                         .summary("Timer complete")
                         .body(&format!(
-                            "Timer for {dur} complete\nFinished at {}",
+                            "{now_time}: Timer for {dur} complete\nFinished at {}",
                             time::time(&Local::now())
                         ))
                         .show()
@@ -164,15 +157,20 @@ pub fn timer(duration: Duration) {
             }
         }
     }
-
-    print!("Timer finished at ");
-    crate::clock::time();
 }
 
 pub fn alarm(stop: DateTime<Local>) {
-    print!("Alarm started at ");
-    crate::clock::time();
-
+    let now = Local::now();
+    print!(
+        "{}: Alarm set at {}",
+        now.time().format("%H:%M:%S"),
+        stop.time()
+    );
+    if Local::now().date_naive() < stop.date_naive() {
+        println!(" (tomorrow)");
+    } else {
+        println!();
+    }
     let mut printer = Printer::new();
 
     let mut time = Local::now();
@@ -209,7 +207,7 @@ pub fn alarm(stop: DateTime<Local>) {
             }
         }
 
-        printer.erase(format!(" {}", dur::time(&(stop - time))));
+        printer.erase(format!("{}", dur::time(&(stop - time))));
         sleep(1.0);
 
         time += second;
@@ -226,13 +224,19 @@ pub fn alarm(stop: DateTime<Local>) {
 
             if time >= stop {
                 let time = time::time(&stop);
-                printer.print(format!("\x07Alarm for {time} complete"));
+                printer.print(format!(
+                    "\x07{time}: Alarm complete! (total time {})",
+                    dur::time(&(stop - now))
+                ));
 
                 #[cfg(feature = "notify")]
                 {
                     if let Err(e) = Notification::new()
                         .summary("Alarm complete")
-                        .body(&format!("Alarm for {time} complete"))
+                        .body(&format!(
+                            "{time}: Alarm complete! (total time {})",
+                            dur::time(&(stop - now))
+                        ))
                         .show()
                     {
                         eprintln!("Failed to show notification: {e}");
